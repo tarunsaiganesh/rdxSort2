@@ -13,14 +13,17 @@ endinterface
 module mkRadixSort(RadixSortIfc);
 
     Vector#(128, FIFO#(Bit#(128))) inQs <- replicateM(mkFIFO);
-    Vector#(128, Reg#(Bit#(128))) inputBuffer <- replicateM(mkReg(0));
+    Vector#(128, FIFO#(Bit#(128))) inputBufferQ1 <- replicateM(mkSizedBRAMFIFO(10));
+    Vector#(128, FIFO#(Bit#(32))) inputBufferQ2 <- replicateM(mkSizedBRAMFIFO(10));
+    Vector#(128, Reg#(Bit#(32))) q1Count <- replicateM(mkReg(0));
     Vector#(128, FIFO#(Bit#(128))) dataQs <- replicateM(mkSizedBRAMFIFO(64));
     Vector#(128, FIFOF#(Tuple2#(Bit#(7), Bit#(128)))) outQs <- replicateM(mkFIFOF);
     Vector#(128, Reg#(Bit#(32))) dataQInCount <- replicateM(mkReg(0));
     Vector#(128, Reg#(Bit#(32))) dataQOutCount <- replicateM(mkReg(0));
     Vector#(128, Reg#(Bit#(32))) burstLeft <- replicateM(mkReg(0));
     Vector#(128, Reg#(Bit#(1))) fromdataQ <- replicateM(mkReg(0));
-    Vector#(128, Reg#(Bit#(3))) inputBufferCount <- replicateM(mkReg(0));
+    Vector#(128, Reg#(Bit#(128))) inputBuffer <- replicateM(mkReg(0));
+    Vector#(128, Reg#(Bit#(2))) inputBufferCount <- replicateM(mkReg(0));
     // Reg#(Bit#(32)) inQ0Count <- mkReg(0);
     // Reg#(Bit#(32)) outQ0Count <- mkReg(0);
     // Reg#(Bit#(32)) dataSum <- mkReg(0);
@@ -28,335 +31,49 @@ module mkRadixSort(RadixSortIfc);
         rule forwardDataIn;
             inQs[i].deq;
             let d = inQs[i].first;
-            Bit#(32) element1 = truncate(d); Bit#(7) target1 = truncate(element1>>17);
-            Bit#(32) element2 = truncate(d>>32); Bit#(7) target2 = truncate(element2>>17);
-            Bit#(32) element3 = truncate(d>>64); Bit#(7) target3 = truncate(element3>>17);
-            Bit#(32) element4 = truncate(d>>96); Bit#(7) target4 = truncate(element4>>17);
-            if (target1 == fromInteger(i) && target2 == fromInteger(i) && target3 == fromInteger(i) && target4 == fromInteger(i)) begin
-                if(inputBufferCount[i] == 4) begin
-                    dataQs[i].enq(inputBuffer[i]);
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= zeroExtend(element1)<<96 | zeroExtend(element2)<<64 | zeroExtend(element3)<<32 | zeroExtend(element4);
-                    inputBufferCount[i] <= 4; 
-                end else if (inputBufferCount[i] == 3) begin
-                    dataQs[i].enq({truncate(inputBuffer[i]), element1});
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | zeroExtend(element2)<<64 | zeroExtend(element3)<<32 | zeroExtend(element4);
-                    inputBufferCount[i] <= 3;
-                end else if (inputBufferCount[i] == 2) begin
-                    dataQs[i].enq({truncate(inputBuffer[i]), element1, element2});
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | 0 | zeroExtend(element3) | zeroExtend(element4);
-                    inputBufferCount[i] <= 2;
-                end else if (inputBufferCount[i] == 1) begin
-                    dataQs[i].enq({truncate(inputBuffer[i]), element1, element2, element3});
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | 0 | 0 | zeroExtend(element4);
-                    inputBufferCount[i] <= 1;
-                end else begin
-                    dataQs[i].enq({element1, element2, element3, element4});
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0;
-                    inputBufferCount[i] <= 0;
-                end 
-            end else if (target1 != fromInteger(i) && target2 == fromInteger(i) && target3 == fromInteger(i) && target4 == fromInteger(i)) begin
-                if(inputBufferCount[i] == 4) begin
-                    dataQs[i].enq(inputBuffer[i]);
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | zeroExtend(element2)<<64 | zeroExtend(element3)<<32 | zeroExtend(element4);
-                    inputBufferCount[i] <= 3; 
-                end else if (inputBufferCount[i] == 3) begin
-                    dataQs[i].enq({truncate(inputBuffer[i]), element2});
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | 0 | zeroExtend(element3)<<32 | zeroExtend(element4);
-                    inputBufferCount[i] <= 2;
-                end else if (inputBufferCount[i] == 2) begin
-                    dataQs[i].enq({truncate(inputBuffer[i]), element2, element3});
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | 0 | 0 | zeroExtend(element4);
-                    inputBufferCount[i] <= 1;
-                end else if (inputBufferCount[i] == 1) begin
-                    inputBuffer[i] <= inputBuffer[i]<<96 | zeroExtend(element2)<<64 | zeroExtend(element3)<<32 | zeroExtend(element4);
-                    inputBufferCount[i] <= 4;
-                end else begin
-                    inputBuffer[i] <= 0 | zeroExtend(element2)<<64 | zeroExtend(element3)<<32 | zeroExtend(element4);
-                    inputBufferCount[i] <= 3;
-                end
-            end else if (target1 == fromInteger(i) && target2 != fromInteger(i) && target3 == fromInteger(i) && target4 == fromInteger(i)) begin
-                if(inputBufferCount[i] == 4) begin
-                    dataQs[i].enq(inputBuffer[i]);
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | zeroExtend(element1)<<64 | zeroExtend(element3)<<32 | zeroExtend(element4);
-                    inputBufferCount[i] <= 3; 
-                end else if (inputBufferCount[i] == 3) begin
-                    dataQs[i].enq({truncate(inputBuffer[i]), element1});
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | 0 | zeroExtend(element3)<<32 | zeroExtend(element4);
-                    inputBufferCount[i] <= 2;
-                end else if (inputBufferCount[i] == 2) begin
-                    dataQs[i].enq({truncate(inputBuffer[i]), element1, element3});
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | 0 | 0 | zeroExtend(element4);
-                    inputBufferCount[i] <= 1;
-                end else if (inputBufferCount[i] == 1) begin
-                    inputBuffer[i] <= inputBuffer[i]<<96 | zeroExtend(element1)<<64 | zeroExtend(element3)<<32 | zeroExtend(element4);
-                    inputBufferCount[i] <= 4;
-                end else begin
-                    inputBuffer[i] <= 0 | zeroExtend(element1)<<64 | zeroExtend(element3)<<32 | zeroExtend(element4);
-                    inputBufferCount[i] <= 3;
-                end
-            end else if (target1 == fromInteger(i) && target2 == fromInteger(i) && target3 != fromInteger(i) && target4 == fromInteger(i)) begin
-                if(inputBufferCount[i] == 4) begin
-                    dataQs[i].enq(inputBuffer[i]);
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | zeroExtend(element1)<<64 | zeroExtend(element2)<<32 | zeroExtend(element4);
-                    inputBufferCount[i] <= 3; 
-                end else if (inputBufferCount[i] == 3) begin
-                    dataQs[i].enq({truncate(inputBuffer[i]), element1});
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | 0 | zeroExtend(element2)<<32 | zeroExtend(element4);
-                    inputBufferCount[i] <= 2;
-                end else if (inputBufferCount[i] == 2) begin
-                    dataQs[i].enq({truncate(inputBuffer[i]), element1, element2});
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | 0 | 0 | zeroExtend(element4);
-                    inputBufferCount[i] <= 1;
-                end else if (inputBufferCount[i] == 1) begin
-                    inputBuffer[i] <= inputBuffer[i]<<96 | zeroExtend(element1)<<64 | zeroExtend(element2)<<32 | zeroExtend(element4);
-                    inputBufferCount[i] <= 4;
-                end else begin
-                    inputBuffer[i] <= 0 | zeroExtend(element1)<<64 | zeroExtend(element2)<<32 | zeroExtend(element4);
-                    inputBufferCount[i] <= 3;
-                end
-            end else if (target1 == fromInteger(i) && target2 == fromInteger(i) && target3 == fromInteger(i) && target4 != fromInteger(i)) begin
-                if(inputBufferCount[i] == 4) begin
-                    dataQs[i].enq(inputBuffer[i]);
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | zeroExtend(element1)<<64 | zeroExtend(element2)<<32 | zeroExtend(element3);
-                    inputBufferCount[i] <= 3; 
-                end else if (inputBufferCount[i] == 3) begin
-                    dataQs[i].enq({truncate(inputBuffer[i]), element1});
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | 0 | zeroExtend(element2)<<32 | zeroExtend(element3);
-                    inputBufferCount[i] <= 2;
-                end else if (inputBufferCount[i] == 2) begin
-                    dataQs[i].enq({truncate(inputBuffer[i]), element1, element2});
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | 0 | 0 | zeroExtend(element3);
-                    inputBufferCount[i] <= 1;
-                end else if (inputBufferCount[i] == 1) begin
-                    inputBuffer[i] <= inputBuffer[i]<<96 | zeroExtend(element1)<<64 | zeroExtend(element2)<<32 | zeroExtend(element3);
-                    inputBufferCount[i] <= 4;
-                end else begin
-                    inputBuffer[i] <= 0 | zeroExtend(element1)<<64 | zeroExtend(element2)<<32 | zeroExtend(element3);
-                    inputBufferCount[i] <= 3;
-                end
-            end else if (target1 != fromInteger(i) && target2 != fromInteger(i) && target3 == fromInteger(i) && target4 == fromInteger(i)) begin
-                if(inputBufferCount[i] == 4) begin
-                    dataQs[i].enq(inputBuffer[i]);
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | 0 | zeroExtend(element3)<<32 | zeroExtend(element4);
-                    inputBufferCount[i] <= 2; 
-                end else if (inputBufferCount[i] == 3) begin
-                    dataQs[i].enq({truncate(inputBuffer[i]), element3});
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | 0 | 0 | zeroExtend(element4);
-                    inputBufferCount[i] <= 1;
-                end else if (inputBufferCount[i] == 2) begin
-                    inputBuffer[i] <= inputBuffer[i]<<64 | zeroExtend(element3)<<32 | zeroExtend(element4);
-                    inputBufferCount[i] <= 4;
-                end else if (inputBufferCount[i] == 1) begin
-                    inputBuffer[i] <= inputBuffer[i]<<64 | zeroExtend(element3)<<32 | zeroExtend(element4);
-                    inputBufferCount[i] <= 3;
-                end else begin
-                    inputBuffer[i] <= 0 | 0 | zeroExtend(element3)<<32 | zeroExtend(element4);
-                    inputBufferCount[i] <= 2;
-                end
-            end else if (target1 != fromInteger(i) && target2 == fromInteger(i) && target3 != fromInteger(i) && target4 == fromInteger(i)) begin
-                if(inputBufferCount[i] == 4) begin
-                    dataQs[i].enq(inputBuffer[i]);
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | 0 | zeroExtend(element2)<<32 | zeroExtend(element4);
-                    inputBufferCount[i] <= 2; 
-                end else if (inputBufferCount[i] == 3) begin
-                    dataQs[i].enq({truncate(inputBuffer[i]), element2});
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | 0 | 0 | zeroExtend(element4);
-                    inputBufferCount[i] <= 1;
-                end else if (inputBufferCount[i] == 2) begin
-                    inputBuffer[i] <= inputBuffer[i]<<64 | zeroExtend(element2)<<32 | zeroExtend(element4);
-                    inputBufferCount[i] <= 4;
-                end else if (inputBufferCount[i] == 1) begin
-                    inputBuffer[i] <= inputBuffer[i]<<64 | zeroExtend(element2)<<32 | zeroExtend(element4);
-                    inputBufferCount[i] <= 3;
-                end else begin
-                    inputBuffer[i] <= 0 | 0 | zeroExtend(element2)<<32 | zeroExtend(element4);
-                    inputBufferCount[i] <= 2;
-                end
-            end else if (target1 != fromInteger(i) && target2 == fromInteger(i) && target3 == fromInteger(i) && target4 != fromInteger(i)) begin
-                if(inputBufferCount[i] == 4) begin
-                    dataQs[i].enq(inputBuffer[i]);
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | 0 | zeroExtend(element2)<<32 | zeroExtend(element3);
-                    inputBufferCount[i] <= 2; 
-                end else if (inputBufferCount[i] == 3) begin
-                    dataQs[i].enq({truncate(inputBuffer[i]), element2});
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | 0 | 0 | zeroExtend(element3);
-                    inputBufferCount[i] <= 1;
-                end else if (inputBufferCount[i] == 2) begin
-                    inputBuffer[i] <= inputBuffer[i]<<64 | zeroExtend(element2)<<32 | zeroExtend(element3);
-                    inputBufferCount[i] <= 4;
-                end else if (inputBufferCount[i] == 1) begin
-                    inputBuffer[i] <= inputBuffer[i]<<64 | zeroExtend(element2)<<32 | zeroExtend(element3);
-                    inputBufferCount[i] <= 3;
-                end else begin
-                    inputBuffer[i] <= 0 | 0 | zeroExtend(element2)<<32 | zeroExtend(element3);
-                    inputBufferCount[i] <= 2;
-                end
-            end else if (target1 == fromInteger(i) && target2 != fromInteger(i) && target3 != fromInteger(i) && target4 == fromInteger(i)) begin
-                if(inputBufferCount[i] == 4) begin
-                    dataQs[i].enq(inputBuffer[i]);
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | 0 | zeroExtend(element1)<<32 | zeroExtend(element4);
-                    inputBufferCount[i] <= 2; 
-                end else if (inputBufferCount[i] == 3) begin
-                    dataQs[i].enq({truncate(inputBuffer[i]), element1});
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | 0 | 0 | zeroExtend(element4);
-                    inputBufferCount[i] <= 1;
-                end else if (inputBufferCount[i] == 2) begin
-                    inputBuffer[i] <= inputBuffer[i]<<64 | zeroExtend(element1)<<32 | zeroExtend(element4);
-                    inputBufferCount[i] <= 4;
-                end else if (inputBufferCount[i] == 1) begin
-                    inputBuffer[i] <= inputBuffer[i]<<64 | zeroExtend(element1)<<32 | zeroExtend(element4);
-                    inputBufferCount[i] <= 3;
-                end else begin
-                    inputBuffer[i] <= 0 | 0 | zeroExtend(element1)<<32 | zeroExtend(element4);
-                    inputBufferCount[i] <= 2;
-                end
-            end else if (target1 == fromInteger(i) && target2 != fromInteger(i) && target3 == fromInteger(i) && target4 != fromInteger(i)) begin
-                if(inputBufferCount[i] == 4) begin
-                    dataQs[i].enq(inputBuffer[i]);
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | 0 | zeroExtend(element1)<<32 | zeroExtend(element3);
-                    inputBufferCount[i] <= 2; 
-                end else if (inputBufferCount[i] == 3) begin
-                    dataQs[i].enq({truncate(inputBuffer[i]), element1});
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | 0 | 0 | zeroExtend(element3);
-                    inputBufferCount[i] <= 1;
-                end else if (inputBufferCount[i] == 2) begin
-                    inputBuffer[i] <= inputBuffer[i]<<64 | zeroExtend(element1)<<32 | zeroExtend(element3);
-                    inputBufferCount[i] <= 4;
-                end else if (inputBufferCount[i] == 1) begin
-                    inputBuffer[i] <= inputBuffer[i]<<64 | zeroExtend(element1)<<32 | zeroExtend(element3);
-                    inputBufferCount[i] <= 3;
-                end else begin
-                    inputBuffer[i] <= 0 | 0 | zeroExtend(element1)<<32 | zeroExtend(element3);
-                    inputBufferCount[i] <= 2;
-                end
-            end else if (target1 == fromInteger(i) && target2 == fromInteger(i) && target3 != fromInteger(i) && target4 != fromInteger(i)) begin
-                if(inputBufferCount[i] == 4) begin
-                    dataQs[i].enq(inputBuffer[i]);
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | 0 | zeroExtend(element1)<<32 | zeroExtend(element2);
-                    inputBufferCount[i] <= 2; 
-                end else if (inputBufferCount[i] == 3) begin
-                    dataQs[i].enq({truncate(inputBuffer[i]), element1});
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | 0 | 0 | zeroExtend(element2);
-                    inputBufferCount[i] <= 1;
-                end else if (inputBufferCount[i] == 2) begin
-                    inputBuffer[i] <= inputBuffer[i]<<64 | zeroExtend(element1)<<32 | zeroExtend(element2);
-                    inputBufferCount[i] <= 4;
-                end else if (inputBufferCount[i] == 1) begin
-                    inputBuffer[i] <= inputBuffer[i]<<64 | zeroExtend(element1)<<32 | zeroExtend(element2);
-                    inputBufferCount[i] <= 3;
-                end else begin
-                    inputBuffer[i] <= 0 | 0 | zeroExtend(element1)<<32 | zeroExtend(element2);
-                    inputBufferCount[i] <= 2;
-                end
-            end else if (target1 != fromInteger(i) && target2 != fromInteger(i) && target3 != fromInteger(i) && target4 == fromInteger(i)) begin
-                if(inputBufferCount[i] == 4) begin
-                    dataQs[i].enq(inputBuffer[i]);
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | 0 | 0 | zeroExtend(element4);
-                    inputBufferCount[i] <= 1; 
-                end else if (inputBufferCount[i] == 3) begin
-                    inputBuffer[i] <= inputBuffer[i]<<32 | zeroExtend(element4);
-                    inputBufferCount[i] <= 4;
-                end else if (inputBufferCount[i] == 2) begin
-                    inputBuffer[i] <= inputBuffer[i]<<32 | zeroExtend(element4);
-                    inputBufferCount[i] <= 3;
-                end else if (inputBufferCount[i] == 1) begin
-                    inputBuffer[i] <= inputBuffer[i]<<32 | zeroExtend(element4);
-                    inputBufferCount[i] <= 2;
-                end else begin
-                    inputBuffer[i] <= 0 | zeroExtend(element4);
-                    inputBufferCount[i] <= 1;
-                end
-            end else if (target1 != fromInteger(i) && target2 != fromInteger(i) && target3 == fromInteger(i) && target4 != fromInteger(i)) begin
-                if(inputBufferCount[i] == 4) begin
-                    dataQs[i].enq(inputBuffer[i]);
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | 0 | 0 | zeroExtend(element3);
-                    inputBufferCount[i] <= 1; 
-                end else if (inputBufferCount[i] == 3) begin
-                    inputBuffer[i] <= inputBuffer[i]<<32 | zeroExtend(element3);
-                    inputBufferCount[i] <= 4;
-                end else if (inputBufferCount[i] == 2) begin
-                    inputBuffer[i] <= inputBuffer[i]<<32 | zeroExtend(element3);
-                    inputBufferCount[i] <= 3;
-                end else if (inputBufferCount[i] == 1) begin
-                    inputBuffer[i] <= inputBuffer[i]<<32 | zeroExtend(element3);
-                    inputBufferCount[i] <= 2;
-                end else begin
-                    inputBuffer[i] <= 0 | zeroExtend(element3);
-                    inputBufferCount[i] <= 1;
-                end
-            end else if (target1 != fromInteger(i) && target2 == fromInteger(i) && target3 != fromInteger(i) && target4 != fromInteger(i)) begin
-                if(inputBufferCount[i] == 4) begin
-                    dataQs[i].enq(inputBuffer[i]);
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | 0 | 0 | zeroExtend(element2);
-                    inputBufferCount[i] <= 1; 
-                end else if (inputBufferCount[i] == 3) begin
-                    inputBuffer[i] <= inputBuffer[i]<<32 | zeroExtend(element2);
-                    inputBufferCount[i] <= 4;
-                end else if (inputBufferCount[i] == 2) begin
-                    inputBuffer[i] <= inputBuffer[i]<<32 | zeroExtend(element2);
-                    inputBufferCount[i] <= 3;
-                end else if (inputBufferCount[i] == 1) begin
-                    inputBuffer[i] <= inputBuffer[i]<<32 | zeroExtend(element2);
-                    inputBufferCount[i] <= 2;
-                end else begin
-                    inputBuffer[i] <= 0 | zeroExtend(element2);
-                    inputBufferCount[i] <= 1;
-                end
-            end else if (target1 == fromInteger(i) && target2 != fromInteger(i) && target3 != fromInteger(i) && target4 != fromInteger(i)) begin
-                if(inputBufferCount[i] == 4) begin
-                    dataQs[i].enq(inputBuffer[i]);
-                    dataQInCount[i] <= dataQInCount[i] + 1;
-                    inputBuffer[i] <= 0 | 0 | 0 | zeroExtend(element1);
-                    inputBufferCount[i] <= 1; 
-                end else if (inputBufferCount[i] == 3) begin
-                    inputBuffer[i] <= inputBuffer[i]<<32 | zeroExtend(element1);
-                    inputBufferCount[i] <= 4;
-                end else if (inputBufferCount[i] == 2) begin
-                    inputBuffer[i] <= inputBuffer[i]<<32 | zeroExtend(element1);
-                    inputBufferCount[i] <= 3;
-                end else if (inputBufferCount[i] == 1) begin
-                    inputBuffer[i] <= inputBuffer[i]<<32 | zeroExtend(element1);
-                    inputBufferCount[i] <= 2;
-                end else begin
-                    inputBuffer[i] <= 0 | zeroExtend(element1);
-                    inputBufferCount[i] <= 1;
-                end
+            Bit#(7) target1 = truncate(d>>17);
+            Bit#(7) target2 = truncate(d>>49);
+            Bit#(7) target3 = truncate(d>>81);
+            Bit#(7) target4 = truncate(d>>113);
+            if (target1 == fromInteger(i) || target2 == fromInteger(i) || target3 == fromInteger(i) || target4 == fromInteger(i)) begin
+                inputBufferQ1[i].enq(d);
             end
             if (i < 127) begin
                     inQs[i+1].enq(d);
             end
+        endrule
+    end
+
+    for(Integer i = 0; i < 128; i = i+1) begin
+        rule transferQ1ToQ2;
+            let d = inputBufferQ1[i].first;
+            Bit#(32) element = truncate(d>>(q1Count[i]*32));
+            Bit#(7) target = truncate(element>>17);
+            if(target == fromInteger(i)) begin
+                inputBufferQ2[i].enq(element);
+            end
+            if(q1Count[i] == 3) begin
+                inputBufferQ1[i].deq;
+                q1Count[i] <= 0;
+            end else begin
+                q1Count[i] <= q1Count[i] + 1;
+            end
+        endrule
+    end
+
+    for(Integer i = 0; i < 128; i = i+1) begin
+        rule bufferToDataQs;
+                inputBufferQ2[i].deq;
+                let d = inputBufferQ2[i].first;
+                if(inputBufferCount[i] == 3) begin
+                    dataQs[i].enq({truncate(inputBuffer[i]), d});
+                    dataQInCount[i] <= dataQInCount[i] + 1;
+                    inputBuffer[i] <= 0;
+                    inputBufferCount[i] <= 0;
+                end else begin
+                    inputBuffer[i] <= (inputBuffer[i]<<32) | zeroExtend(d);
+                    inputBufferCount[i] <= inputBufferCount[i] + 1;
+                end
         endrule
     end
 
