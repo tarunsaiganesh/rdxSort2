@@ -12,10 +12,10 @@ endinterface
 
 module mkRadixSort(RadixSortIfc);
 
-    Vector#(128, FIFO#(Bit#(128))) inQs <- replicateM(mkFIFO);
-    Vector#(128, FIFO#(Bit#(128))) inputBufferQ1 <- replicateM(mkSizedBRAMFIFO(10));
+    Vector#(8, FIFO#(Bit#(128))) inQs <- replicateM(mkFIFO);
+    Vector#(8, FIFO#(Bit#(128))) inputBufferQ1 <- replicateM(mkSizedBRAMFIFO(10));
     Vector#(128, FIFO#(Bit#(32))) inputBufferQ2 <- replicateM(mkSizedBRAMFIFO(10));
-    Vector#(128, Reg#(Bit#(32))) q1Count <- replicateM(mkReg(0));
+    Vector#(8, Reg#(Bit#(32))) q1Count <- replicateM(mkReg(0));
     Vector#(128, FIFO#(Bit#(128))) dataQs <- replicateM(mkSizedBRAMFIFO(64));
     Vector#(128, FIFOF#(Tuple2#(Bit#(7), Bit#(128)))) outQs <- replicateM(mkFIFOF);
     Vector#(128, Reg#(Bit#(32))) dataQInCount <- replicateM(mkReg(0));
@@ -27,7 +27,7 @@ module mkRadixSort(RadixSortIfc);
     // Reg#(Bit#(32)) inQ0Count <- mkReg(0);
     // Reg#(Bit#(32)) outQ0Count <- mkReg(0);
     // Reg#(Bit#(32)) dataSum <- mkReg(0);
-    for (Integer i = 0; i < 128; i = i+1) begin
+    for (Integer i = 0; i < 8; i = i+1) begin
         rule forwardDataIn;
             inQs[i].deq;
             let d = inQs[i].first;
@@ -35,22 +35,23 @@ module mkRadixSort(RadixSortIfc);
             Bit#(7) target2 = truncate(d>>49);
             Bit#(7) target3 = truncate(d>>81);
             Bit#(7) target4 = truncate(d>>113);
-            if (target1 == fromInteger(i) || target2 == fromInteger(i) || target3 == fromInteger(i) || target4 == fromInteger(i)) begin
+            if ((target1 >= fromInteger(i)*16 && target1 < fromInteger(i+1)*16) || (target2 >= fromInteger(i)*16 && target2 < fromInteger(i+1)*16)
+                || (target3 >= fromInteger(i)*16 && target3 < fromInteger(i+1)*16) || (target4 >= fromInteger(i)*16 && target4 < fromInteger(i+1)*16)) begin
                 inputBufferQ1[i].enq(d);
             end
-            if (i < 127) begin
+            if (i < 7) begin
                     inQs[i+1].enq(d);
             end
         endrule
     end
 
-    for(Integer i = 0; i < 128; i = i+1) begin
+    for(Integer i = 0; i < 8; i = i+1) begin
         rule transferQ1ToQ2;
             let d = inputBufferQ1[i].first;
             Bit#(32) element = truncate(d>>(q1Count[i]*32));
             Bit#(7) target = truncate(element>>17);
-            if(target == fromInteger(i)) begin
-                inputBufferQ2[i].enq(element);
+            if(target >= fromInteger(i)*16 && target < fromInteger(i+1)*16) begin
+                inputBufferQ2[target].enq(element);
             end
             if(q1Count[i] == 3) begin
                 inputBufferQ1[i].deq;

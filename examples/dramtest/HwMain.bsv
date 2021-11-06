@@ -79,26 +79,23 @@ module mkHwMain#(PcieUserIfc pcie, DRAMUserIfc dram)
 	DeSerializerIfc#(128, 4) dsrlzr <- mkDeSerializer;
 	Reg#(Bit#(32)) deserializeCount <- mkReg(0);
 	FIFO#(Bit#(7)) indexes <- mkFIFO;
-	Reg#(Bit#(7)) ddd1 <- mkReg(0);
-	Reg#(Bit#(7)) ddd2 <- mkReg(0);
-	Reg#(Bit#(7)) ddd3 <- mkReg(0);
-	Reg#(Bit#(7)) ddd4 <- mkReg(0);
 	rule  deSerialize;
 		let x <- rdx.dataOut; // get i(7-bit), 128-bit using dataOut send it to deserializer
 		if(deserializeCount == 0) begin
 			indexes.enq(tpl_1(x));
 			deserializeCount <= 63; // Every 64 (128-bit) elements coming from radix.dataOut will belong to same index
-			// $write("index %d\n", tpl_1(x));
+			$write("index %d\n", tpl_1(x));
 		end else begin
 			deserializeCount <= deserializeCount - 1;
 		end
 
 		let dddd = tpl_2(x);
-		// ddd1 <= truncate(dddd>>17);
-		// ddd2 <= truncate(dddd>>49);
-		// ddd3 <= truncate(dddd>>81);
-		// ddd4 <= truncate(dddd>>113);
-		// $write("number's bits %d %d %d %d\n", ddd1, ddd2, ddd3, ddd4);
+		Bit#(7) ddd1 = truncate(dddd>>17);
+		Bit#(7) ddd2 = truncate(dddd>>49);
+		Bit#(7) ddd3 = truncate(dddd>>81);
+		Bit#(7) ddd4 = truncate(dddd>>113);
+		// $write("%d ", deserializeCount);
+		$write("number's bits %d %d %d %d\n", ddd1, ddd2, ddd3, ddd4);
 		dsrlzr.put(tpl_2(x));
 	endrule
 	// Reg#(Bit#(32)) tempCount <- mkReg(32768);
@@ -120,7 +117,7 @@ module mkHwMain#(PcieUserIfc pcie, DRAMUserIfc dram)
 		// Get 512-bit from Deserializer
 		let b <- dsrlzr.get; 
 		tempCount <= tempCount + 1;
-		$write("tempCount %d\n", tempCount+1);
+		// $write("tempCount %d\n", tempCount+1);
 		// Buffer number of every 1024B/512b = 16 512-bit numbers is obtained by dequing indexes; offset within buffer indicated by bufferByteOffset
 		if(indexCount == 15) begin
 			indexes.deq;
