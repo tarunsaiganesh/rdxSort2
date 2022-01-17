@@ -70,10 +70,13 @@ module mkHwMain#(PcieUserIfc pcie, DRAMUserIfc dram)
 		srlzr.put(readBuffer.first); 	// seriliaze into 512/32 = 16 32-bit values
 		isLastQ.deq;
 		if ( isLastQ.first ) elapsedCycle <= cycles-startCycle;
-	endrule 
+	endrule
+	Reg#(Bit#(32)) ccc <- mkReg(0);
 	rule procDRAMRead;
 		let d <- srlzr.get;
 		rdx.dataIn(d); //Send each 32-bit value into the inQ[0] of RadixSort module using dataIn method
+		$write("into radixSorter %d\n", ccc+1);
+		ccc <= ccc + 1;
 	endrule
 
 	DeSerializerIfc#(128, 4) dsrlzr <- mkDeSerializer;
@@ -81,22 +84,24 @@ module mkHwMain#(PcieUserIfc pcie, DRAMUserIfc dram)
 	FIFO#(Bit#(7)) indexes <- mkFIFO;
 	rule  deSerialize;
 		let x <- rdx.dataOut; // get i(7-bit), 128-bit using dataOut send it to deserializer
+		// Bit#(128) x = 0;
 		if(deserializeCount == 0) begin
-			indexes.enq(tpl_1(x));
+			Bit#(7) index = truncate(x>>17);
+			indexes.enq(index);
 			deserializeCount <= 63; // Every 64 (128-bit) elements coming from radix.dataOut will belong to same index
-			$write("index %d\n", tpl_1(x));
+			// $write("index %d\n", index);
 		end else begin
 			deserializeCount <= deserializeCount - 1;
 		end
 
-		let dddd = tpl_2(x);
+		let dddd = x;
 		Bit#(7) ddd1 = truncate(dddd>>17);
 		Bit#(7) ddd2 = truncate(dddd>>49);
 		Bit#(7) ddd3 = truncate(dddd>>81);
 		Bit#(7) ddd4 = truncate(dddd>>113);
 		// $write("%d ", deserializeCount);
-		$write("number's bits %d %d %d %d\n", ddd1, ddd2, ddd3, ddd4);
-		dsrlzr.put(tpl_2(x));
+		// $write("number's bits %d %d %d %d\n", ddd1, ddd2, ddd3, ddd4);
+		dsrlzr.put(x);
 	endrule
 	// Reg#(Bit#(32)) tempCount <- mkReg(32768);
 	// rule  tmp1 (tempCount > 0);

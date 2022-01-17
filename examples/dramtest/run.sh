@@ -11,5 +11,5 @@ then
 else
 	./sw | tee res.txt
 fi
-# kill -9 $BDBM_BSIM_PID
-# rm /dev/shm/bdbm$BDBM_BSIM_PID
+kill -9 $BDBM_BSIM_PID
+rm /dev/shm/bdbm$BDBM_BSIM_PID
